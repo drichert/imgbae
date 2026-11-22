@@ -60,18 +60,22 @@ function resourceUrl(route: string, item: LibraryItem): string {
     '&v=' + encodeURIComponent(item.modifiedAt);
 }
 function friendlySize(value: number): string {
-  if (!value) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  if (!value) return '0B';
+  const units = ['B', 'K', 'M', 'G', 'T'];
   const power = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return (value / (1024 ** power)).toFixed(power === 0 ? 0 : 1) + ' ' + units[power];
+  return (value / (1024 ** power)).toFixed(power === 0 ? 0 : 1) + units[power];
 }
 function friendlyDate(value: string): string {
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
+function friendlyDimensions(image: { width?: number | null; height?: number | null } | null): string | null {
+  if (!image?.width || !image.height) return null;
+  return image.width + '×' + image.height;
+}
 function friendlyMegapixels(image: { width?: number | null; height?: number | null } | null): string | null {
   if (!image?.width || !image.height) return null;
   const megapixels = (image.width * image.height) / 1_000_000;
-  return megapixels < 0.05 ? '<0.1 MP' : megapixels.toFixed(1) + ' MP';
+  return megapixels < 0.05 ? '<0.1MP' : megapixels.toFixed(1) + 'MP';
 }
 function viewUrl(item: LibraryItem): string {
   return resourceUrl(/\.(png|jpe?g|webp|gif|avif)$/i.test(item.name) ? 'image' : 'preview', item);
@@ -162,7 +166,9 @@ export default function App() {
   const images = useMemo(() => (browse?.items || []).filter((item) => item.kind === 'image'), [browse]);
   const selectedIndex = images.findIndex((item) => item.path === selected);
   const selectedItem = selectedIndex >= 0 ? images[selectedIndex] : null;
-  const selectedMegapixels = friendlyMegapixels(details?.path === selected ? details : selectedItem);
+  const measuredImage = details?.path === selected ? details : selectedItem;
+  const selectedDimensions = friendlyDimensions(measuredImage);
+  const selectedMegapixels = friendlyMegapixels(measuredImage);
 
   function changeSearch(criteria: string) {
     setSelected(null);
@@ -295,6 +301,7 @@ export default function App() {
 
           <div className="gallery">
             {visible.map((item) => {
+              const dimensions = friendlyDimensions(item);
               const megapixels = friendlyMegapixels(item);
               return (
                 <button key={item.path} className={'tile ' + (item.kind === 'directory' ? 'folder-tile' : '')}
@@ -317,8 +324,9 @@ export default function App() {
                         <img className="tile-comfy-logo" src={import.meta.env.BASE_URL + 'comfyui.svg'}
                           width={20} height={20} alt="ComfyUI metadata detected" title="ComfyUI metadata detected" />
                       )}
-                      {item.kind === 'directory' ? 'Folder' : friendlySize(item.size)}
-                      {megapixels && <span>· {megapixels}</span>}
+                      {item.kind === 'directory' ? 'Folder' : <span>{friendlySize(item.size)}</span>}
+                      {megapixels && <span>{megapixels}</span>}
+                      {dimensions && <span>{dimensions}</span>}
                     </div>
                   </div>
                 </button>
@@ -353,7 +361,7 @@ export default function App() {
           <aside className="inspector">
             <div className="inspector-heading"><Info size={17} /> Image details</div>
             <div className="inspector-row"><span>Name</span><strong className="wrap-value">{selectedItem.name}</strong></div>
-            <div className="inspector-row"><span>Dimensions</span><strong>{details?.width && details?.height ? details.width + ' × ' + details.height : '—'}</strong></div>
+            <div className="inspector-row"><span>Dimensions</span><strong>{selectedDimensions ?? '—'}</strong></div>
             <div className="inspector-row"><span>Megapixels</span><strong>{selectedMegapixels ?? '—'}</strong></div>
             <div className="inspector-row"><span>Format</span><strong>{details?.format?.toUpperCase() || '—'}</strong></div>
             <div className="inspector-row"><span>Size</span><strong>{friendlySize(selectedItem.size)}</strong></div>
