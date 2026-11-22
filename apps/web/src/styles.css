@@ -37,6 +37,10 @@ h1{margin:0;font-size:clamp(27px,3.5vw,37px);font-weight:690;letter-spacing:-1.2
 .filter-wrap input{min-width:0;width:100%;background:none;color:#eee;border:0;outline:none;font-size:12px}
 .filter-wrap input::placeholder{color:#777c89}
 .filter-wrap button{border:none;background:none;color:#a8acb7;padding:2px;display:flex}
+.sort-wrap{display:flex;align-items:center;gap:6px;margin-right:auto}
+.sort-wrap select,.sort-wrap button{background:#1d1f26;border:1px solid #32343e;color:#c9cad1;border-radius:9px;height:42px;font-size:12px}
+.sort-wrap select{padding:0 10px}
+.sort-wrap button{width:42px;display:grid;place-items:center}
 .counter{font-size:12px;color:#818593}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(177px,1fr));gap:17px}
 .tile{display:flex;flex-direction:column;align-items:stretch;background:#1a1c22;border:1px solid #292c34;border-radius:12px;padding:0;overflow:hidden;color:inherit;text-align:left;min-width:0;transition:border-color .15s ease,transform .15s ease}
@@ -44,9 +48,13 @@ h1{margin:0;font-size:clamp(27px,3.5vw,37px);font-weight:690;letter-spacing:-1.2
 .tile:disabled{opacity:.55}
 .tile-preview{position:relative;flex:none;height:167px;display:flex;align-items:center;justify-content:center;background:#242630;color:#646d84;overflow:hidden}
 .tile-preview img{width:100%;height:100%;object-fit:contain}
-.folder-tile .tile-preview{background:#222630;color:#acafd2}
+/* Min-height matches an image tile, for rows that contain only folders. */
+.folder-stack{display:grid;grid-template-rows:repeat(4,minmax(0,1fr));gap:6px;min-width:0;min-height:238px}
+.folder-tile{flex-direction:row;align-items:center;gap:10px;padding:0 12px;border-radius:9px;background:#222630}
+.folder-tile svg{flex:none;color:#acafd2}
 .tile-info{padding:13px 14px 14px}
 .tile-name{font-size:12px;font-weight:590;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:7px}
+.folder-tile .tile-name{min-width:0;margin-bottom:0}
 .tile-sub{display:flex;flex-wrap:wrap;align-items:center;column-gap:4px;min-height:20px;font-size:11px;color:#8d91a0}
 .tile-sub span{white-space:nowrap}
 .tile-comfy-logo{display:block;flex:none}
@@ -80,7 +88,7 @@ h1{margin:0;font-size:clamp(27px,3.5vw,37px);font-weight:690;letter-spacing:-1.2
 kbd{font:inherit;font-size:10px;background:#252830;border:1px solid #41444c;border-radius:4px;padding:3px 5px}
 .divider-dot{margin:0 8px;color:#5e636f}
 @media(max-width:900px){.sidebar{width:75px;padding:24px 10px}.identity{margin:0 5px 45px}.brand,.sidebar .side-label,.side-entry,.side-footer{display:none}.topbar{padding:14px 23px}.content{padding:38px 23px}.inspector{width:225px;padding:22px 18px}}
-@media(max-width:680px){.sidebar{display:none}.topbar{padding:13px 17px;min-height:60px}.content{padding:30px 17px}.heading{align-items:flex-start}.back-button{font-size:0;padding:10px}.gallery{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}.tile-preview{height:130px}.toolbar{flex-wrap:wrap}.counter{width:100%}.filter-wrap{width:100%}.viewer-body{flex-direction:column;overflow-y:auto}.viewer-canvas{min-height:250px;padding:22px 51px}.viewer-canvas img{max-height:60vh}.inspector{width:auto;border-left:0;border-top:1px solid #30313a;padding:18px 22px}.viewer-footer{display:none}}
+@media(max-width:680px){.sidebar{display:none}.topbar{padding:13px 17px;min-height:60px}.content{padding:30px 17px}.heading{align-items:flex-start}.back-button{font-size:0;padding:10px}.gallery{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}.tile-preview{height:130px}.folder-stack{min-height:201px}.toolbar{flex-wrap:wrap}.counter{width:100%}.filter-wrap{width:100%}.viewer-body{flex-direction:column;overflow-y:auto}.viewer-canvas{min-height:250px;padding:22px 51px}.viewer-canvas img{max-height:60vh}.inspector{width:auto;border-left:0;border-top:1px solid #30313a;padding:18px 22px}.viewer-footer{display:none}}
 
 /* Evidence badges are informational, never interactive or a proof of authenticity. */
 .provenance-chip{display:inline-flex;align-items:center;gap:5px;max-width:calc(100% - 14px);padding:5px 8px;border-radius:6px;background:#212d3fe8;border:1px solid #617dacc7;color:#d9e8ff;font-size:10px;font-weight:640;line-height:1.15;letter-spacing:.1px;white-space:nowrap;pointer-events:none}
