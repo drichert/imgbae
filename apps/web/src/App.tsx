@@ -70,7 +70,8 @@ function friendlyDate(value: string): string {
 }
 function friendlyMegapixels(image: { width?: number | null; height?: number | null } | null): string | null {
   if (!image?.width || !image.height) return null;
-  return ((image.width * image.height) / 1_000_000).toFixed(1) + ' MP';
+  const megapixels = (image.width * image.height) / 1_000_000;
+  return megapixels < 0.05 ? '<0.1 MP' : megapixels.toFixed(1) + ' MP';
 }
 function viewUrl(item: LibraryItem): string {
   return resourceUrl(/\.(png|jpe?g|webp|gif|avif)$/i.test(item.name) ? 'image' : 'preview', item);
