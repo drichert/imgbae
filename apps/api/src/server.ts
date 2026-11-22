@@ -25,7 +25,7 @@ type Item = {
 
 async function imageDimensions(file: string) {
   const metadata = await sharp(file).metadata().catch(() => null);
-  return { width: metadata?.width ?? null, height: metadata?.height ?? null };
+  return { width: metadata?.autoOrient.width ?? null, height: metadata?.autoOrient.height ?? null };
 }
 
 type SortKey = 'name' | 'modified' | 'size';
@@ -369,7 +369,7 @@ async function main(): Promise<void> {
       path: publicPath(root, file),
       name: file.split(sep).pop(),
       size: stat.size, modifiedAt: stat.mtime.toISOString(),
-      width: metadata.width ?? null, height: metadata.height ?? null,
+      width: metadata.autoOrient.width ?? null, height: metadata.autoOrient.height ?? null,
       format: metadata.format ?? null, orientation: metadata.orientation ?? null,
       pages: metadata.pages ?? null,
       hasComfyUiMetadata,
