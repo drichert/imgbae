@@ -22,6 +22,7 @@ type BrowseResult = {
   path: string;
   page: number;
   pageSize: number;
+  totalPages: number;
   total: number;
   hasMore: boolean;
   incomplete?: boolean;
@@ -40,6 +41,8 @@ type ImageDetails = {
   hasComfyUiMetadata: boolean;
 };
 
+// Keep in step with foldersPerSlot in the API, which pages by gallery slot.
+const foldersPerStack = 4;
 const sortLabels: Record<SortKey, string> = { name: 'Name', modified: 'Date modified', size: 'File size' };
 
 function storedSort(): { sort: SortKey; order: SortOrder } {
@@ -163,6 +166,11 @@ export default function App() {
   const visible = useMemo(() => {
     return (browse?.items || []).filter((item) => item.name.toLowerCase().includes(filter.toLowerCase()));
   }, [browse, filter]);
+  const folderStacks = useMemo(() => {
+    const folders = visible.filter((item) => item.kind === 'directory');
+    return Array.from({ length: Math.ceil(folders.length / foldersPerStack) },
+      (_, i) => folders.slice(i * foldersPerStack, (i + 1) * foldersPerStack));
+  }, [visible]);
   const images = useMemo(() => (browse?.items || []).filter((item) => item.kind === 'image'), [browse]);
   const selectedIndex = images.findIndex((item) => item.path === selected);
   const selectedItem = selectedIndex >= 0 ? images[selectedIndex] : null;
@@ -222,7 +230,7 @@ export default function App() {
   }, [selected, selectedIndex, images]);
 
   const imageCount = browse?.items.filter((item) => item.kind === 'image').length || 0;
-  const totalPages = browse ? Math.max(1, Math.ceil(browse.total / browse.pageSize)) : 1;
+  const totalPages = browse?.totalPages ?? 1;
 
   return (
     <div className="shell">
@@ -300,19 +308,27 @@ export default function App() {
           </div>}
 
           <div className="gallery">
-            {visible.map((item) => {
+            {folderStacks.map((stack) => (
+              <div key={stack[0].path} className="folder-stack">
+                {stack.map((item) => (
+                  <button key={item.path} className="tile folder-tile" onClick={() => navigate(item.path)} title={item.name}>
+                    <Folder size={22} strokeWidth={1.4} />
+                    <span className="tile-name">{item.name}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {visible.filter((item) => item.kind !== 'directory').map((item) => {
               const dimensions = friendlyDimensions(item);
               const megapixels = friendlyMegapixels(item);
               return (
-                <button key={item.path} className={'tile ' + (item.kind === 'directory' ? 'folder-tile' : '')}
-                  onClick={() => item.kind === 'directory' ? navigate(item.path) : item.kind === 'image' ? setSelected(item.path) : undefined}
+                <button key={item.path} className="tile"
+                  onClick={() => item.kind === 'image' ? setSelected(item.path) : undefined}
                   disabled={item.kind === 'file'} title={item.name}>
                   <div className="tile-preview">
                     {item.kind === 'image'
                       ? <img src={resourceUrl('thumbnail', item)} loading="lazy" alt="" />
-                      : item.kind === 'directory'
-                        ? <Folder size={45} strokeWidth={1.1} />
-                        : <FileIcon size={38} strokeWidth={1.1} />}
+                      : <FileIcon size={38} strokeWidth={1.1} />}
                   </div>
                   <div className="tile-info">
                     <div className="tile-name">{item.name}</div>
@@ -324,7 +340,7 @@ export default function App() {
                         <img className="tile-comfy-logo" src={import.meta.env.BASE_URL + 'comfyui.svg'}
                           width={20} height={20} alt="ComfyUI metadata detected" title="ComfyUI metadata detected" />
                       )}
-                      {item.kind === 'directory' ? 'Folder' : <span>{friendlySize(item.size)}</span>}
+                      <span>{friendlySize(item.size)}</span>
                       {megapixels && <span>{megapixels}</span>}
                       {dimensions && <span>{dimensions}</span>}
                     </div>

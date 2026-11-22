@@ -13,7 +13,7 @@ This document is the starting point for whoever picks that work back up.
 
 ## Known cost points to measure first
 
-1. **Browse** calls `readdir` on the whole folder, then `lstat` plus a metadata probe for each item on the requested page (96 items).
+1. **Browse** calls `readdir` on the whole folder, then `lstat` plus a metadata probe for each item on the requested page. A page is 96 gallery slots and four folders share a slot, so it holds at most 96 files or 384 folders (which need only the `lstat`).
 2. **Date and size sorting** (PR #13) stats *every* entry in the folder, 16 at a time, before paging. Name sorting doesn't. This is the most likely slowdown on large shared folders.
 3. **Thumbnails and previews** are re-encoded with Sharp on every request. There is no disk cache, only `Cache-Control: private, max-age=300`, so each cold gallery load reads every visible image in full over the network.
 4. **The metadata cache** lives in memory, so it's empty again after every API restart.

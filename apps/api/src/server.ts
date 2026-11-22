@@ -34,10 +34,24 @@ const sortKeys: readonly SortKey[] = ['name', 'modified', 'size'];
 type PathQuery = { path?: string };
 type SearchQuery = SamplerFilters & { page?: string; options?: string; presence?: string; node?: string | string[] };
 const pageSize = 96;
+// The gallery stacks this many folders in the space of one image; keep in step with App.tsx.
+const foldersPerSlot = 4;
 
 function pageNumber(raw: string | undefined): number {
   const page = Number(raw ?? '0');
   return Number.isSafeInteger(page) ? Math.max(0, Math.min(page, 100000)) : 0;
+}
+
+// Pages are measured in gallery slots. Folders are listed first and share slots.
+function browsePage(page: number, folders: number, total: number) {
+  const folderSlots = Math.ceil(folders / foldersPerSlot);
+  const slots = folderSlots + total - folders;
+  const entryAt = (slot: number) => slot < folderSlots ? slot * foldersPerSlot : folders + slot - folderSlots;
+  return {
+    start: entryAt(page * pageSize),
+    end: entryAt((page + 1) * pageSize),
+    totalPages: Math.ceil(slots / pageSize),
+  };
 }
 
 function searchNumber(value: string, key: 'steps' | 'cfg'): number | undefined {
@@ -184,7 +198,9 @@ async function main(): Promise<void> {
           || a.entry.name.localeCompare(b.entry.name, undefined, { numeric: true, sensitivity: 'base' }))
       );
 
-    const slice = entries.slice(page * pageSize, (page + 1) * pageSize);
+    const folderCount = entries.filter(({ kind }) => kind === 'directory').length;
+    const { start, end, totalPages } = browsePage(page, folderCount, entries.length);
+    const slice = entries.slice(start, end);
     const values = await mapLimited(slice, 8, async ({ entry, kind, stat: listedStat }): Promise<Item | null> => {
       const file = join(dir, entry.name);
       try {
@@ -211,8 +227,8 @@ async function main(): Promise<void> {
 
     return {
       path: publicPath(root, dir),
-      page, pageSize, total: entries.length, sort, order: direction === -1 ? 'desc' : 'asc',
-      hasMore: (page + 1) * pageSize < entries.length,
+      page, pageSize, totalPages, total: entries.length, sort, order: direction === -1 ? 'desc' : 'asc',
+      hasMore: page + 1 < totalPages,
       items: values.filter((value): value is Item => value !== null),
     };
   });
@@ -353,7 +369,7 @@ async function main(): Promise<void> {
       ...item,
       ...await imageDimensions(join(root, item.path)),
     }));
-    return { path: '', page, pageSize, total, hasMore: (page + 1) * pageSize < total, items: results, incomplete };
+    return { path: '', page, pageSize, totalPages: Math.ceil(total / pageSize), total, hasMore: (page + 1) * pageSize < total, items: results, incomplete };
   });
 
   app.get<{ Querystring: PathQuery }>('/api/details', async (request) => {
