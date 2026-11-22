@@ -39,15 +39,16 @@ h1{margin:0;font-size:clamp(27px,3.5vw,37px);font-weight:690;letter-spacing:-1.2
 .filter-wrap button{border:none;background:none;color:#a8acb7;padding:2px;display:flex}
 .counter{font-size:12px;color:#818593}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(177px,1fr));gap:17px}
-.tile{background:#1a1c22;border:1px solid #292c34;border-radius:12px;padding:0;overflow:hidden;color:inherit;text-align:left;min-width:0;transition:border-color .15s ease,transform .15s ease}
+.tile{display:flex;flex-direction:column;align-items:stretch;background:#1a1c22;border:1px solid #292c34;border-radius:12px;padding:0;overflow:hidden;color:inherit;text-align:left;min-width:0;transition:border-color .15s ease,transform .15s ease}
 .tile:not(:disabled):hover{border-color:#737a9f;transform:translateY(-2px)}
 .tile:disabled{opacity:.55}
-.tile-preview{position:relative;height:167px;display:flex;align-items:center;justify-content:center;background:#242630;color:#646d84;overflow:hidden}
+.tile-preview{position:relative;flex:none;height:167px;display:flex;align-items:center;justify-content:center;background:#242630;color:#646d84;overflow:hidden}
 .tile-preview img{width:100%;height:100%;object-fit:contain}
 .folder-tile .tile-preview{background:#222630;color:#acafd2}
 .tile-info{padding:13px 14px 14px}
 .tile-name{font-size:12px;font-weight:590;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:7px}
-.tile-sub{display:flex;align-items:center;gap:6px;min-height:20px;font-size:11px;color:#8d91a0}
+.tile-sub{display:flex;flex-wrap:wrap;align-items:center;column-gap:4px;min-height:20px;font-size:11px;color:#8d91a0}
+.tile-sub span{white-space:nowrap}
 .tile-comfy-logo{display:block;flex:none}
 .message{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;text-align:center;min-height:230px;background:#191b21;border:1px dashed #343842;border-radius:12px;color:#a7abba;margin-bottom:25px;padding:30px}
 .message strong{color:#eef0f4}
