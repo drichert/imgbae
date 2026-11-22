@@ -13,6 +13,8 @@ type LibraryItem = {
   size: number;
   modifiedAt: string;
   hasComfyUiMetadata: boolean;
+  width?: number | null;
+  height?: number | null;
 };
 type SortKey = 'name' | 'modified' | 'size';
 type SortOrder = 'asc' | 'desc';
@@ -65,6 +67,10 @@ function friendlySize(value: number): string {
 }
 function friendlyDate(value: string): string {
   return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+function friendlyMegapixels(image: { width?: number | null; height?: number | null } | null): string | null {
+  if (!image?.width || !image.height) return null;
+  return ((image.width * image.height) / 1_000_000).toFixed(1) + ' MP';
 }
 function viewUrl(item: LibraryItem): string {
   return resourceUrl(/\.(png|jpe?g|webp|gif|avif)$/i.test(item.name) ? 'image' : 'preview', item);
@@ -155,6 +161,7 @@ export default function App() {
   const images = useMemo(() => (browse?.items || []).filter((item) => item.kind === 'image'), [browse]);
   const selectedIndex = images.findIndex((item) => item.path === selected);
   const selectedItem = selectedIndex >= 0 ? images[selectedIndex] : null;
+  const selectedMegapixels = friendlyMegapixels(details?.path === selected ? details : selectedItem);
 
   function changeSearch(criteria: string) {
     setSelected(null);
@@ -286,32 +293,36 @@ export default function App() {
           </div>}
 
           <div className="gallery">
-            {visible.map((item) => (
-              <button key={item.path} className={'tile ' + (item.kind === 'directory' ? 'folder-tile' : '')}
-                onClick={() => item.kind === 'directory' ? navigate(item.path) : item.kind === 'image' ? setSelected(item.path) : undefined}
-                disabled={item.kind === 'file'} title={item.name}>
-                <div className="tile-preview">
-                  {item.kind === 'image'
-                    ? <img src={resourceUrl('thumbnail', item)} loading="lazy" alt="" />
-                    : item.kind === 'directory'
-                      ? <Folder size={45} strokeWidth={1.1} />
-                      : <FileIcon size={38} strokeWidth={1.1} />}
-                </div>
-                <div className="tile-info">
-                  <div className="tile-name">{item.name}</div>
-                  {search && <div className="tile-location" title={item.path}>
-                    {item.path.includes('/') ? item.path.slice(0, item.path.lastIndexOf('/')) : 'Library'}
-                  </div>}
-                  <div className="tile-sub">
-                    {item.hasComfyUiMetadata && (
-                      <img className="tile-comfy-logo" src={import.meta.env.BASE_URL + 'comfyui.svg'}
-                        width={20} height={20} alt="ComfyUI metadata detected" title="ComfyUI metadata detected" />
-                    )}
-                    {item.kind === 'directory' ? 'Folder' : friendlySize(item.size)}
+            {visible.map((item) => {
+              const megapixels = friendlyMegapixels(item);
+              return (
+                <button key={item.path} className={'tile ' + (item.kind === 'directory' ? 'folder-tile' : '')}
+                  onClick={() => item.kind === 'directory' ? navigate(item.path) : item.kind === 'image' ? setSelected(item.path) : undefined}
+                  disabled={item.kind === 'file'} title={item.name}>
+                  <div className="tile-preview">
+                    {item.kind === 'image'
+                      ? <img src={resourceUrl('thumbnail', item)} loading="lazy" alt="" />
+                      : item.kind === 'directory'
+                        ? <Folder size={45} strokeWidth={1.1} />
+                        : <FileIcon size={38} strokeWidth={1.1} />}
                   </div>
-                </div>
-              </button>
-            ))}
+                  <div className="tile-info">
+                    <div className="tile-name">{item.name}</div>
+                    {search && <div className="tile-location" title={item.path}>
+                      {item.path.includes('/') ? item.path.slice(0, item.path.lastIndexOf('/')) : 'Library'}
+                    </div>}
+                    <div className="tile-sub">
+                      {item.hasComfyUiMetadata && (
+                        <img className="tile-comfy-logo" src={import.meta.env.BASE_URL + 'comfyui.svg'}
+                          width={20} height={20} alt="ComfyUI metadata detected" title="ComfyUI metadata detected" />
+                      )}
+                      {item.kind === 'directory' ? 'Folder' : friendlySize(item.size)}
+                      {megapixels && <span>· {megapixels}</span>}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {browse && totalPages > 1 && <div className="pagination">
@@ -342,6 +353,7 @@ export default function App() {
             <div className="inspector-heading"><Info size={17} /> Image details</div>
             <div className="inspector-row"><span>Name</span><strong className="wrap-value">{selectedItem.name}</strong></div>
             <div className="inspector-row"><span>Dimensions</span><strong>{details?.width && details?.height ? details.width + ' × ' + details.height : '—'}</strong></div>
+            <div className="inspector-row"><span>Megapixels</span><strong>{selectedMegapixels ?? '—'}</strong></div>
             <div className="inspector-row"><span>Format</span><strong>{details?.format?.toUpperCase() || '—'}</strong></div>
             <div className="inspector-row"><span>Size</span><strong>{friendlySize(selectedItem.size)}</strong></div>
             <div className="inspector-row"><span>Modified</span><strong>{friendlyDate(selectedItem.modifiedAt)}</strong></div>

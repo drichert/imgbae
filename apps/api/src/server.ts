@@ -22,6 +22,12 @@ type Item = {
   modifiedAt: string;
   hasComfyUiMetadata: boolean;
 };
+
+async function imageDimensions(file: string) {
+  const metadata = await sharp(file).metadata().catch(() => null);
+  return { width: metadata?.width ?? null, height: metadata?.height ?? null };
+}
+
 type SortKey = 'name' | 'modified' | 'size';
 type BrowseQuery = { path?: string; page?: string; sort?: string; order?: string };
 const sortKeys: readonly SortKey[] = ['name', 'modified', 'size'];
@@ -195,6 +201,7 @@ async function main(): Promise<void> {
         return {
           name: entry.name, path: publicPath(root, file), kind,
           size: stat.size, modifiedAt: stat.mtime.toISOString(), hasComfyUiMetadata,
+          ...(kind === 'image' ? await imageDimensions(file) : {}),
         };
       } catch {
         // The directory may change while it is being listed.
@@ -342,7 +349,11 @@ async function main(): Promise<void> {
         nodes: [...nodeOptions].sort((a, b) => a.localeCompare(b)), incomplete,
       };
     }
-    return { path: '', page, pageSize, total, hasMore: (page + 1) * pageSize < total, items, incomplete };
+    const results = await mapLimited(items, 8, async (item) => ({
+      ...item,
+      ...await imageDimensions(join(root, item.path)),
+    }));
+    return { path: '', page, pageSize, total, hasMore: (page + 1) * pageSize < total, items: results, incomplete };
   });
 
   app.get<{ Querystring: PathQuery }>('/api/details', async (request) => {
