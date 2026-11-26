@@ -6,7 +6,7 @@
 
 The first PR is deliberately **read-only**:
 
-- Browse folders within one explicitly configured filesystem root
+- Browse folders across one or more explicitly configured filesystem roots
 - View a responsive image thumbnail grid and open a larger image preview
 - See file sizes, modified times and image dimensions
 - Move through image previews with the keyboard
@@ -27,7 +27,28 @@ npm install
 IMGBAE_ROOT=/absolute/path/to/images npm run dev
 ```
 
-Open http://localhost:5173. By default, both services listen on loopback only: the API at `127.0.0.1:3001` and the Vite frontend at `127.0.0.1:5173`. Vite proxies `/api` to the loopback API.
+To keep your library folders in a config file, save an `imgbae.json` file with a `roots` object. Each key is the name shown in the library, and each value is an absolute folder path.
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 3001,
+  "roots": {
+    "ComfyUI outputs": "/absolute/path/to/output",
+    "Archive": "/mnt/photos/archive"
+  }
+}
+```
+
+```sh
+IMGBAE_CONFIG=/absolute/path/to/imgbae.json npm run dev
+```
+
+Restart Imgbae after editing the file. You can also set `IMGBAE_ROOTS` directly to the JSON object inside `roots`. For the folder list, `IMGBAE_ROOTS` takes precedence over `roots` in the file, followed by `IMGBAE_ROOT`.
+
+Each named folder appears on the library home. ComfyUI metadata search covers all configured folders. Names are used in folder and image paths, so bookmarks follow the name even if the underlying folder moves. Keep using `IMGBAE_ROOT` to preserve existing single-folder bookmarks.
+
+Open http://localhost:5173. The config file’s optional `host` and `port` set the API listen address and default to `127.0.0.1` and `3001`. `IMGBAE_HOST` and `IMGBAE_PORT` override those fields. The Vite frontend listens on `127.0.0.1:5173` by default and proxies `/api` to the effective API address.
 
 To use the browser from another machine on your trusted home LAN, bind **only the frontend** to the server's specific private LAN IPv4 address:
 
@@ -39,9 +60,9 @@ Replace `192.168.1.50` with the actual address on the machine running imgbae. Fr
 
 The server refuses wildcard (`0.0.0.0`) and public-IP bindings for both API and development frontend. These checks reduce accidental exposure, but **cannot defeat router port-forwarding, a publicly reachable reverse proxy, a tunnel, or an insecure host firewall**. Do not enable those routes. The initial read-only app has no authentication, so every permitted LAN user can view the library. Require authentication and authorization **before** enabling rename, move, delete or metadata writes. See [network-access guidance](docs/NETWORK_ACCESS.md).
 
-If your images live on another LAN machine, **mount the remote share** on the machine running the API (NFS, SMB/CIFS, sshfs, etc.), then point `IMGBAE_ROOT` to the mount. The app does not require an agent on your NAS. Current development targets local disks, so share performance hasn't been tested yet; see [docs/NETWORK_SHARES.md](docs/NETWORK_SHARES.md).
+If your images live on another LAN machine, **mount the remote share** on the machine running the API (NFS, SMB/CIFS, sshfs, etc.), then configure the mount in your config file, `IMGBAE_ROOTS`, or `IMGBAE_ROOT`. The app does not require an agent on your NAS. Current development targets local disks, so share performance hasn't been tested yet; see [docs/NETWORK_SHARES.md](docs/NETWORK_SHARES.md).
 
-When upgrading an existing deployment, update its exported configuration variables to the `IMGBAE_` names; the previous names are no longer recognized. If `IMGBAE_PORT` is changed, the development frontend will proxy to that same API port.
+When upgrading an existing deployment, update its exported configuration variables to the `IMGBAE_` names; the previous names are no longer recognized.
 
 Optional API environment variables: `IMGBAE_PORT=3001`, `IMGBAE_HOST=127.0.0.1`. Prefer keeping the API on loopback and using the web proxy for trusted-LAN access. Do **not** expose the unauthenticated API or development server to the internet or an untrusted LAN. Authentication and production deployment are separate milestones. Prefer an SSH tunnel for remote access outside your home LAN.
 
@@ -64,4 +85,4 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the explicitly staged features, inclu
 
 ## Safety
 
-Every API request must resolve inside the configured library root, including after resolving symlinks. Unsupported files cannot be served through the image endpoint. All milestone-1 routes are read-only. Subsequent destructive operations will require separate review and explicit confirmations.
+Every API request must resolve inside the selected configured library root, including after resolving symlinks. Unsupported files cannot be served through the image endpoint. All milestone-1 routes are read-only. Subsequent destructive operations will require separate review and explicit confirmations.

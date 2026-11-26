@@ -12,6 +12,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowJs": true,
     "allowImportingTsExtensions": true,
     "types": [
       "vite/client"

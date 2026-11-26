@@ -1,5 +1,5 @@
 import fastify from 'fastify';
-import { isIP } from 'node:net';
+import { apiAddress, isObject, parseJson, readConfig } from './config.js';
 import sharp from 'sharp';
 import { matchesComfySampler, readComfyPrompt, readWorkflowNodeTypes, type SamplerFilters } from './comfyPrompt.js';
 import { hasComfyUiMetadata, readPngTextMetadata } from './comfyui.js';
@@ -75,14 +75,6 @@ function searchFilters(query: SearchQuery): SamplerFilters | null {
 }
 
 
-function permittedBindHost(host: string): boolean {
-  if (host === '::1') return true;
-  if (isIP(host) !== 4) return false;
-  const [a, b] = host.split('.').map(Number);
-  return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31)
-    || (a === 192 && b === 168);
-}
-
 class ForbiddenPath extends Error {}
 
 // Avoid issuing dozens of concurrent random reads against a network share.
@@ -106,34 +98,77 @@ function isWithinRoot(root: string, target: string): boolean {
   return rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel);
 }
 
-function publicPath(root: string, file: string): string {
-  return relative(root, file).split(sep).join('/');
+function compareNames(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+type LibraryRoot = { name: string; directory: string; stat: Stats };
+
+function publicPath(root: LibraryRoot, file: string): string {
+  const path = relative(root.directory, file).split(sep).join('/');
+  return [root.name, path].filter(Boolean).join('/');
+}
+
+async function loadRoots(config: Record<string, unknown>): Promise<LibraryRoot[]> {
+  const configuredRoots = process.env.IMGBAE_ROOTS;
+  let namedRoots: unknown = config.roots;
+  let source = namedRoots === undefined ? undefined : 'The roots property in ' + process.env.IMGBAE_CONFIG;
+
+  if (configuredRoots !== undefined) {
+    source = 'IMGBAE_ROOTS';
+    namedRoots = parseJson(configuredRoots, source);
+  }
+
+  let entries: [string, unknown][] = [['', process.env.IMGBAE_ROOT]];
+  if (source) {
+    if (!isObject(namedRoots) || !Object.keys(namedRoots).length) {
+      throw new Error(source + ' must be a nonempty JSON object mapping folder names to absolute paths.');
+    }
+    entries = Object.entries(namedRoots);
+  }
+
+  return Promise.all(entries.map(async ([name, path]) => {
+    if (source && (!name.trim() || name === '.' || name === '..' || /[/\\\u0000-\u001f]/.test(name))) {
+      throw new Error(source + ' must use valid single path segments as folder names.');
+    }
+    if (typeof path !== 'string' || !isAbsolute(path)) {
+      throw new Error('Library folders must be configured with absolute paths.');
+    }
+    const directory = await realpath(path);
+    const stat = await lstat(directory);
+    if (!stat.isDirectory()) throw new Error('Each library folder must refer to a directory.');
+    return { name, directory, stat };
+  }));
 }
 
 async function main(): Promise<void> {
-  const configuredRoot = process.env.IMGBAE_ROOT;
-  if (!configuredRoot || !isAbsolute(configuredRoot)) {
-    throw new Error('IMGBAE_ROOT must be an absolute path to your images or mounted share.');
-  }
-  const root = await realpath(configuredRoot);
-  const rootStat = await lstat(root);
-  if (!rootStat.isDirectory()) throw new Error('IMGBAE_ROOT must refer to a directory.');
+  const config = readConfig();
+  const address = apiAddress(config);
+  const roots = await loadRoots(config);
+  const rootsByName = new Map(roots.map((root) => [root.name, root]));
+  const legacyRoot = rootsByName.get('');
 
-  async function resolveSafe(input: string | undefined): Promise<string> {
-    if ((input ?? '').length > 4096 || (input ?? '').includes('\0')) {
+  async function resolveSafe(input: string | undefined = '') {
+    if (typeof input !== 'string' || input.length > 4096 || input.includes('\0')) {
       throw new ForbiddenPath('Invalid path');
     }
-    const target = await realpath(resolve(root, input || '.'));
-    if (!isWithinRoot(root, target)) throw new ForbiddenPath('Path is outside library root');
-    return target;
+    const [name, ...parts] = input.split('/');
+    const root = legacyRoot ?? rootsByName.get(name);
+    if (!root) throw new ForbiddenPath('Unknown library folder');
+    const path = legacyRoot ? input : parts.join('/');
+    const candidate = resolve(root.directory, path || '.');
+    if (!isWithinRoot(root.directory, candidate)) throw new ForbiddenPath('Path is outside library root');
+    const file = await realpath(candidate);
+    if (!isWithinRoot(root.directory, file)) throw new ForbiddenPath('Path is outside library root');
+    return { root, file };
   }
 
-  async function imageFile(path: string | undefined): Promise<{ file: string; mime: string }> {
+  async function imageFile(path: string | undefined) {
     if (!path) throw new ForbiddenPath('Missing image path');
-    const file = await resolveSafe(path);
+    const { root, file } = await resolveSafe(path);
     const mime = imageMime[extname(file).toLowerCase()];
     if (!mime || !(await lstat(file)).isFile()) throw new ForbiddenPath('Not a supported image');
-    return { file, mime };
+    return { root, file, mime };
   }
 
   const app = fastify({ logger: true });
@@ -164,13 +199,36 @@ async function main(): Promise<void> {
 
   app.get('/api/health', async () => ({ ok: true }));
 
-  app.get<{ Querystring: BrowseQuery }>('/api/browse', async (request) => {
-    const dir = await resolveSafe(request.query.path);
-    if (!(await lstat(dir)).isDirectory()) throw new ForbiddenPath('Not a directory');
+  app.get('/api/roots', async () => ({
+    roots: roots.filter(({ name }) => name)
+      .map(({ name }) => ({ name, path: name }))
+      .sort((a, b) => compareNames(a.name, b.name)),
+  }));
 
+  app.get<{ Querystring: BrowseQuery }>('/api/browse', async (request) => {
     const page = pageNumber(request.query.page);
     const sort = sortKeys.find((key) => key === request.query.sort) ?? 'name';
     const direction = request.query.order === 'desc' ? -1 : 1;
+    const order = direction === -1 ? 'desc' : 'asc';
+
+    if (!legacyRoot && (request.query.path === undefined || request.query.path === '')) {
+      const items = [...roots].sort((a, b) => direction * (
+        (sort === 'modified' ? a.stat.mtimeMs - b.stat.mtimeMs : 0) || compareNames(a.name, b.name)
+      ));
+      const { start, end, totalPages } = browsePage(page, items.length, items.length);
+      return {
+        path: '', page, pageSize, totalPages, total: items.length, sort, order,
+        hasMore: page + 1 < totalPages,
+        items: items.slice(start, end).map((root): Item => ({
+          name: root.name, path: root.name, kind: 'directory', size: root.stat.size,
+          modifiedAt: root.stat.mtime.toISOString(), hasComfyUiMetadata: false,
+        })),
+      };
+    }
+
+    const { root, file: dir } = await resolveSafe(request.query.path);
+    if (!(await lstat(dir)).isDirectory()) throw new ForbiddenPath('Not a directory');
+
     const listed = (await readdir(dir, { withFileTypes: true }))
       // Deliberately exclude symlinks in v1; the root itself may be a symlink.
       .filter((entry) => entry.isDirectory() || entry.isFile())
@@ -195,7 +253,7 @@ async function main(): Promise<void> {
       .sort((a, b) =>
         (a.kind === 'directory' ? 0 : 1) - (b.kind === 'directory' ? 0 : 1)
         || direction * (byKey(a.stat, b.stat)
-          || a.entry.name.localeCompare(b.entry.name, undefined, { numeric: true, sensitivity: 'base' }))
+          || compareNames(a.entry.name, b.entry.name))
       );
 
     const folderCount = entries.filter(({ kind }) => kind === 'directory').length;
@@ -227,7 +285,7 @@ async function main(): Promise<void> {
 
     return {
       path: publicPath(root, dir),
-      page, pageSize, totalPages, total: entries.length, sort, order: direction === -1 ? 'desc' : 'asc',
+      page, pageSize, totalPages, total: entries.length, sort, order,
       hasMore: page + 1 < totalPages,
       items: values.filter((value): value is Item => value !== null),
     };
@@ -288,13 +346,13 @@ async function main(): Promise<void> {
     const steps = new Set<number>();
     const cfg = new Set<number>();
     const page = pageNumber(request.query.page);
-    const items: Item[] = [];
-    const directories = [root];
+    const items: { item: Item; file: string }[] = [];
+    const directories = roots.map((root) => ({ root, directory: root.directory })).reverse();
     let total = 0;
     let incomplete = false;
 
     while (directories.length && !reply.raw.destroyed) {
-      const directory = directories.pop()!;
+      const { root, directory } = directories.pop()!;
       try {
         if (await realpath(directory) !== directory) continue;
         const entries = await readdir(directory, { withFileTypes: true });
@@ -338,19 +396,19 @@ async function main(): Promise<void> {
             if (!requestedNodes.every((type) => summary.nodeTypes.has(type))) continue;
             if (hasSamplerFilters && !summary.samplers.some((sampler) => matchesComfySampler(sampler, filters))) continue;
             if (total >= page * pageSize && items.length < pageSize) {
-              items.push({
+              items.push({ file, item: {
                 name: entry.name, path: publicPath(root, file), kind: 'image',
                 size: stat.size, modifiedAt: stat.mtime.toISOString(), hasComfyUiMetadata: true,
-              });
+              } });
             }
             total++;
           } catch {
             incomplete = true;
           }
         }
-        for (const child of childDirectories.reverse()) directories.push(child);
+        for (const child of childDirectories.reverse()) directories.push({ root, directory: child });
       } catch (error) {
-        if (directory === root) throw error;
+        if (legacyRoot && directory === root.directory) throw error;
         incomplete = true;
       }
     }
@@ -365,15 +423,15 @@ async function main(): Promise<void> {
         nodes: [...nodeOptions].sort((a, b) => a.localeCompare(b)), incomplete,
       };
     }
-    const results = await mapLimited(items, 8, async (item) => ({
+    const results = await mapLimited(items, 8, async ({ item, file }) => ({
       ...item,
-      ...await imageDimensions(join(root, item.path)),
+      ...await imageDimensions(file),
     }));
     return { path: '', page, pageSize, totalPages: Math.ceil(total / pageSize), total, hasMore: (page + 1) * pageSize < total, items: results, incomplete };
   });
 
   app.get<{ Querystring: PathQuery }>('/api/details', async (request) => {
-    const { file } = await imageFile(request.query.path);
+    const { root, file } = await imageFile(request.query.path);
     const [stat, metadata] = await Promise.all([lstat(file), sharp(file).metadata()]);
     let hasComfyUiMetadata = false;
     try {
@@ -424,16 +482,8 @@ async function main(): Promise<void> {
     return reply.type(mime).header('Cache-Control', 'private, max-age=300').send(createReadStream(file));
   });
 
-  const port = Number(process.env.IMGBAE_PORT || '3001');
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('IMGBAE_PORT must be an integer between 1 and 65535.');
-  }
-  const host = process.env.IMGBAE_HOST?.trim() || '127.0.0.1';
-  if (!permittedBindHost(host)) {
-    throw new Error('IMGBAE_HOST must be loopback or a specific private IPv4 address (not 0.0.0.0 or a public address).');
-  }
-  await app.listen({ port, host });
-  app.log.info({ root }, 'Serving read-only image library');
+  await app.listen(address);
+  app.log.info({ roots: roots.map(({ directory }) => directory) }, 'Serving read-only image library');
 }
 
 main().catch((error: unknown) => {
