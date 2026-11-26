@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowDownWideNarrow, ArrowLeft, ArrowRight, ArrowUpNarrowWide, ChevronLeft, ChevronRight, File as FileIcon,
+  ArrowDownWideNarrow, ArrowRight, ArrowUpNarrowWide, ChevronLeft, ChevronRight, File as FileIcon,
   Folder, Image as ImageIcon, Images, Info, Search, Workflow, X,
 } from 'lucide-react';
 import MetadataViewer from './MetadataViewer';
@@ -16,6 +16,7 @@ type LibraryItem = {
   width?: number | null;
   height?: number | null;
 };
+type LibraryRoot = { name: string; path: string };
 type SortKey = 'name' | 'modified' | 'size';
 type SortOrder = 'asc' | 'desc';
 type BrowseResult = {
@@ -92,6 +93,7 @@ function breadcrumbs(path: string) {
 
 export default function App() {
   const [folder, setFolder] = useState(currentHashPath);
+  const [roots, setRoots] = useState<LibraryRoot[]>([]);
   const [page, setPage] = useState(0);
   const [browse, setBrowse] = useState<BrowseResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -102,6 +104,18 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [details, setDetails] = useState<ImageDetails | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/roots', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not load library roots');
+        return await response.json() as { roots: LibraryRoot[] };
+      })
+      .then(({ roots }) => { if (!controller.signal.aborted) setRoots(roots); })
+      .catch(() => { /* Folder browsing has its own error display. */ });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const onHashChange = () => { setFolder(currentHashPath()); setSearch(''); setPage(0); setFilter(''); setSelected(null); };
@@ -231,6 +245,8 @@ export default function App() {
 
   const imageCount = browse?.items.filter((item) => item.kind === 'image').length || 0;
   const totalPages = browse?.totalPages ?? 1;
+  const activeRoot = folder.split('/', 1)[0];
+  const folderTrail = breadcrumbs(folder);
 
   return (
     <div className="shell">
@@ -239,9 +255,21 @@ export default function App() {
           <span className="brand">imgbae<span className="brand-dot">.</span></span>
         </div>
         <div className="side-label">WORKSPACE</div>
-        <button className={'side-entry ' + (folder === '' ? 'active' : '')} onClick={() => navigate('')}>
-          <Images size={17} strokeWidth={1.7} /> Image library
-        </button>
+        <nav className="library-nav" aria-label="Library folders">
+          <button className={'side-entry' + (!folder && !search ? ' active' : '')}
+            aria-current={!folder && !search ? 'page' : undefined} onClick={() => navigate('')}>
+            <Images size={17} strokeWidth={1.7} aria-hidden="true" /> <span>Image library</span>
+          </button>
+          {roots.map((root) => {
+            const active = !search && activeRoot === root.path;
+            return (
+              <button key={root.path} className={'side-entry root-entry' + (active ? ' active' : '')}
+                aria-current={active ? 'location' : undefined} title={root.name} onClick={() => navigate(root.path)}>
+                <Folder size={17} strokeWidth={1.7} aria-hidden="true" /> <span>{root.name}</span>
+              </button>
+            );
+          })}
+        </nav>
         <div className="side-footer">
           <div className="side-label">MILESTONE 01</div>
           <p>Browse and view</p>
@@ -251,14 +279,18 @@ export default function App() {
 
       <main className="workspace">
         <header className="topbar">
-          <div className="pathbar" aria-label="Folder path">
-            {breadcrumbs(folder).map((crumb, i) => (
-              <span className="path-part" key={crumb.path}>
-                {i > 0 && <ChevronRight size={15} className="path-chevron" />}
-                <button className={i === breadcrumbs(folder).length - 1 ? 'current' : ''} onClick={() => navigate(crumb.path)}>{crumb.name}</button>
-              </span>
-            ))}
-          </div>
+          <nav className="pathbar" aria-label="Folder path">
+            <ol>
+              {folderTrail.map((crumb, index) => (
+                <li className="path-part" key={crumb.path}>
+                  {index > 0 && <ChevronRight size={15} className="path-chevron" aria-hidden="true" />}
+                  {index === folderTrail.length - 1 && !search
+                    ? <span className="path-current" aria-current="page">{crumb.name}</span>
+                    : <button onClick={() => navigate(crumb.path)}>{crumb.name}</button>}
+                </li>
+              ))}
+            </ol>
+          </nav>
           <span className="read-only"><span className="status-dot" /> READ ONLY</span>
         </header>
 
@@ -269,9 +301,6 @@ export default function App() {
               <h1>{search ? 'Search results' : folder ? folder.split('/').pop() : 'Image library'}</h1>
               <p className="subtitle">{search ? 'Matching ComfyUI images across the library.' : 'Browse your images, explore folders, and view details.'}</p>
             </div>
-            {folder && <button className="back-button" onClick={() => navigate(folder.split('/').slice(0, -1).join('/'))}>
-              <ArrowLeft size={16} /> Up one folder
-            </button>}
           </div>
 
           {hasLibraryComfyMetadata && (
@@ -300,7 +329,7 @@ export default function App() {
             <span className="counter">{browse ? browse.total.toLocaleString() + (search ? ' matches' : ' entries') + ' · ' + imageCount + ' images on page' : search ? 'Searching library' : 'Loading library'}</span>
           </div>
 
-          {error && <div className="message error"><strong>Unable to open library</strong><p>{error}</p><small>Check that the API is running and IMGBAE_ROOT points to a readable folder.</small></div>}
+          {error && <div className="message error"><strong>Unable to open library</strong><p>{error}</p><small>Check that the API is running and the library folders configured with IMGBAE_CONFIG, IMGBAE_ROOTS, or IMGBAE_ROOT are readable.</small></div>}
           {loading && !error && <div className="message">{search ? 'Searching the library…' : 'Loading folder...'}</div>}
           {!loading && !error && visible.length === 0 && <div className="message">
             <ImageIcon size={28} strokeWidth={1.4}/><strong>{filter || search ? 'No matching items' : 'This folder is empty'}</strong>
