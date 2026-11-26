@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownWideNarrow, ArrowRight, ArrowUpNarrowWide, ChevronLeft, ChevronRight, File as FileIcon,
-  Bell, Folder, Image as ImageIcon, Images, Info, Search, Settings, Workflow, X,
+  Folder, Image as ImageIcon, Images, Info, Search, Settings, Workflow, X,
 } from 'lucide-react';
 import MetadataViewer from './MetadataViewer';
 import MetadataSearch from './MetadataSearch';
@@ -117,23 +117,7 @@ export default function App() {
   const [details, setDetails] = useState<ImageDetails | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(storedNotifications);
   const [permission, setPermission] = useState(desktopPermission);
-  const [notification, setNotification] = useState<{ message: string } | null>(null);
   const fileSnapshot = useRef<{ folder: string; names: Set<string> } | null>(null);
-
-  useEffect(() => {
-    if (!notification) return;
-    let timer: number | undefined;
-    function updateDismissal() {
-      window.clearTimeout(timer);
-      if (!document.hidden) timer = window.setTimeout(() => setNotification(null), 8000);
-    }
-    updateDismissal();
-    document.addEventListener('visibilitychange', updateDismissal);
-    return () => {
-      document.removeEventListener('visibilitychange', updateDismissal);
-      window.clearTimeout(timer);
-    };
-  }, [notification]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -164,7 +148,6 @@ export default function App() {
     const url = (search ? '/api/search?' : '/api/browse?') + query;
     if (!notificationsEnabled || search || fileSnapshot.current?.folder !== folder) {
       fileSnapshot.current = null;
-      setNotification(null);
     }
     let refreshTimer: number | undefined;
     let hasListing = false;
@@ -182,14 +165,11 @@ export default function App() {
           const snapshot = fileSnapshot.current;
           const added = snapshot ? result.fileNames.filter((name) => !snapshot.names.has(name)) : [];
           fileSnapshot.current = { folder, names: new Set(result.fileNames) };
-          if (added.length) {
+          if (added.length && (document.hidden || !document.hasFocus()) && desktopPermission() === 'granted') {
             const message = added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files';
-            setNotification({ message });
-            if (document.hidden && desktopPermission() === 'granted') {
-              try {
-                new window.Notification('imgbae', { body: message, tag: 'imgbae-new-files' });
-              } catch { /* The in-app alert remains available. */ }
-            }
+            try {
+              new window.Notification('imgbae', { body: message, tag: 'imgbae-new-files' });
+            } catch { setPermission('unavailable'); }
           }
         }
         const lastPage = Math.max(0, result.totalPages - 1);
@@ -295,7 +275,6 @@ export default function App() {
 
   function toggleNotifications(enabled: boolean) {
     fileSnapshot.current = null;
-    setNotification(null);
     setNotificationsEnabled(enabled);
     try { localStorage.setItem(notificationKey, String(enabled)); }
     catch { /* The setting still applies for this visit. */ }
@@ -410,9 +389,7 @@ export default function App() {
                     onChange={(event) => toggleNotifications(event.target.checked)} />
                   New file notifications
                 </label>
-                <p>Show an alert when files appear in the open folder.</p>
-                {notificationsEnabled && permission === 'granted' &&
-                  <p>Desktop alerts are enabled while the tab is in the background.</p>}
+                <p>Send a browser notification for new files in the open folder while imgbae is inactive.</p>
                 {notificationsEnabled && permission === 'denied' &&
                   <p>To receive desktop alerts, allow notifications in your browser’s site settings.</p>}
                 {notificationsEnabled && permission === 'unavailable' &&
@@ -515,15 +492,6 @@ export default function App() {
         </div>
       </main>
 
-      <div className="file-notification" role="status">
-        {notification && <div className="notification-card">
-          <Bell size={18} aria-hidden="true" />
-          <span>{notification.message}</span>
-          <button type="button" aria-label="Dismiss notification" onClick={() => setNotification(null)}>
-            <X size={17} aria-hidden="true" />
-          </button>
-        </div>}
-      </div>
 
       {selectedItem && <div className="lightbox" role="dialog" aria-modal="true" aria-label={'Viewing ' + selectedItem.name} onClick={() => setSelected(null)}>
         <div className="viewer-header" onClick={(event) => event.stopPropagation()}>
