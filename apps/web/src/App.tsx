@@ -118,7 +118,14 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(storedNotifications);
   const [permission, setPermission] = useState(desktopPermission);
   const [toast, setToast] = useState<{ message: string } | null>(null);
+  const [newFileNames, setNewFileNames] = useState<Set<string> | null>(null);
   const fileSnapshot = useRef<{ folder: string; names: Set<string> } | null>(null);
+
+  useEffect(() => {
+    if (!newFileNames) return;
+    const timer = window.setTimeout(() => setNewFileNames(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [newFileNames]);
 
   useEffect(() => {
     if (!toast) return;
@@ -151,11 +158,12 @@ export default function App() {
     setBrowse(null);
     const query = search ? new URLSearchParams(search) : new URLSearchParams({ path: folder, sort, order });
     query.set('page', String(page));
-    if (!search && notificationsEnabled) query.set('includeFileNames', '1');
+    if (!search) query.set('includeFileNames', '1');
     const url = (search ? '/api/search?' : '/api/browse?') + query;
-    if (!notificationsEnabled || search || fileSnapshot.current?.folder !== folder) {
+    if (search || fileSnapshot.current?.folder !== folder) {
       fileSnapshot.current = null;
       setToast(null);
+      setNewFileNames(null);
     }
     let refreshTimer: number | undefined;
     let hasListing = false;
@@ -169,11 +177,12 @@ export default function App() {
         }
         const result = await response.json() as BrowseResult;
         if (controller.signal.aborted) return;
-        if (notificationsEnabled && result.fileNames) {
+        if (result.fileNames) {
           const snapshot = fileSnapshot.current;
           const added = snapshot ? result.fileNames.filter((name) => !snapshot.names.has(name)) : [];
           fileSnapshot.current = { folder, names: new Set(result.fileNames) };
-          if (added.length) {
+          if (added.length) setNewFileNames(new Set(added));
+          if (notificationsEnabled && added.length) {
             const message = added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files';
             if (!document.hidden && document.hasFocus()) {
               setToast({ message });
@@ -223,7 +232,7 @@ export default function App() {
       void loadListing();
     }
 
-    if (!search && notificationsEnabled) document.addEventListener('visibilitychange', refreshOnReturn);
+    if (!search) document.addEventListener('visibilitychange', refreshOnReturn);
     void loadListing();
     return () => {
       document.removeEventListener('visibilitychange', refreshOnReturn);
@@ -286,7 +295,7 @@ export default function App() {
   }
 
   function toggleNotifications(enabled: boolean) {
-    fileSnapshot.current = null;
+    if (!enabled) setToast(null);
     setNotificationsEnabled(enabled);
     try { localStorage.setItem(notificationKey, String(enabled)); }
     catch { /* The setting still applies for this visit. */ }
@@ -467,8 +476,9 @@ export default function App() {
             {visible.filter((item) => item.kind !== 'directory').map((item) => {
               const dimensions = friendlyDimensions(item);
               const megapixels = friendlyMegapixels(item);
+              const isNewImage = item.kind === 'image' && newFileNames?.has(item.name);
               return (
-                <button key={item.path} className="tile"
+                <button key={item.path} className={isNewImage ? 'tile tile-new' : 'tile'}
                   onClick={() => item.kind === 'image' ? setSelected(item.path) : undefined}
                   disabled={item.kind === 'file'} title={item.name}>
                   <div className="tile-preview">
