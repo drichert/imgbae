@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownWideNarrow, ArrowRight, ArrowUpNarrowWide, ChevronLeft, ChevronRight, File as FileIcon,
-  Folder, Image as ImageIcon, Images, Info, Search, Workflow, X,
+  Bell, Folder, Image as ImageIcon, Images, Info, Search, Settings, Workflow, X,
 } from 'lucide-react';
 import MetadataViewer from './MetadataViewer';
 import MetadataSearch from './MetadataSearch';
@@ -27,6 +27,7 @@ type BrowseResult = {
   total: number;
   hasMore: boolean;
   incomplete?: boolean;
+  fileNames?: string[];
   items: LibraryItem[];
 };
 type ImageDetails = {
@@ -45,6 +46,7 @@ type ImageDetails = {
 // Keep in step with foldersPerSlot in the API, which pages by gallery slot.
 const foldersPerStack = 4;
 const folderRefreshMs = 5000;
+const notificationKey = 'imgbae.newFileNotifications';
 const sortLabels: Record<SortKey, string> = { name: 'Name', modified: 'Date modified', size: 'File size' };
 
 function storedSort(): { sort: SortKey; order: SortOrder } {
@@ -55,6 +57,10 @@ function storedSort(): { sort: SortKey; order: SortOrder } {
       order: saved.order === 'desc' ? 'desc' : 'asc',
     };
   } catch { return { sort: 'name', order: 'asc' }; }
+}
+function storedNotifications(): boolean {
+  try { return localStorage.getItem(notificationKey) === 'true'; }
+  catch { return false; }
 }
 function currentHashPath(): string {
   try { return decodeURIComponent(window.location.hash.replace(/^#\/?/, '')); }
@@ -105,6 +111,16 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [details, setDetails] = useState<ImageDetails | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(storedNotifications);
+  const [notification, setNotification] = useState<{ message: string } | null>(null);
+  const fileSnapshot = useRef<{ folder: string; names: Set<string> } | null>(null);
+  const notificationEnabled = useRef(notificationsEnabled);
+
+  useEffect(() => {
+    if (!notification) return;
+    const timer = window.setTimeout(() => setNotification(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [notification]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -131,12 +147,19 @@ export default function App() {
     setBrowse(null);
     const query = search ? new URLSearchParams(search) : new URLSearchParams({ path: folder, sort, order });
     query.set('page', String(page));
-    const url = (search ? '/api/search?' : '/api/browse?') + query;
+    if (search || fileSnapshot.current?.folder !== folder) {
+      fileSnapshot.current = null;
+      setNotification(null);
+    }
     let refreshTimer: number | undefined;
     let hasListing = false;
 
     async function loadListing() {
       try {
+        const snapshot = fileSnapshot.current;
+        if (!search && notificationEnabled.current) query.set('includeFileNames', '1');
+        else query.delete('includeFileNames');
+        const url = (search ? '/api/search?' : '/api/browse?') + query;
         const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok) {
           const action = search ? 'Could not search the library' : 'Could not open this folder';
@@ -144,6 +167,13 @@ export default function App() {
         }
         const result = await response.json() as BrowseResult;
         if (controller.signal.aborted) return;
+        if (result.fileNames && notificationEnabled.current && fileSnapshot.current === snapshot) {
+          const added = snapshot ? result.fileNames.filter((name) => !snapshot.names.has(name)) : [];
+          fileSnapshot.current = { folder, names: new Set(result.fileNames) };
+          if (added.length) {
+            setNotification({ message: added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files' });
+          }
+        }
         const lastPage = Math.max(0, result.totalPages - 1);
         if (!search && page > lastPage) {
           setSelected(null);
@@ -233,6 +263,15 @@ export default function App() {
     setPage(0);
     setFilter('');
     setSearch(criteria);
+  }
+
+  function toggleNotifications(enabled: boolean) {
+    notificationEnabled.current = enabled;
+    fileSnapshot.current = null;
+    setNotification(null);
+    setNotificationsEnabled(enabled);
+    try { localStorage.setItem(notificationKey, String(enabled)); }
+    catch { /* The setting still applies for this visit. */ }
   }
 
   function navigate(path: string) {
@@ -327,7 +366,20 @@ export default function App() {
               ))}
             </ol>
           </nav>
-          <span className="read-only"><span className="status-dot" /> READ ONLY</span>
+          <div className="topbar-actions">
+            <span className="read-only"><span className="status-dot" /> READ ONLY</span>
+            <details className="settings">
+              <summary aria-label="Settings" title="Settings"><Settings size={19} aria-hidden="true" /></summary>
+              <div className="settings-panel">
+                <label>
+                  <input type="checkbox" checked={notificationsEnabled}
+                    onChange={(event) => toggleNotifications(event.target.checked)} />
+                  New file notifications
+                </label>
+                <p>Show an alert when files appear in the open folder.</p>
+              </div>
+            </details>
+          </div>
         </header>
 
         <div className="content">
@@ -422,6 +474,16 @@ export default function App() {
           </div>}
         </div>
       </main>
+
+      <div className="file-notification" role="status">
+        {notification && <div className="notification-card">
+          <Bell size={18} aria-hidden="true" />
+          <span>{notification.message}</span>
+          <button type="button" aria-label="Dismiss notification" onClick={() => setNotification(null)}>
+            <X size={17} aria-hidden="true" />
+          </button>
+        </div>}
+      </div>
 
       {selectedItem && <div className="lightbox" role="dialog" aria-modal="true" aria-label={'Viewing ' + selectedItem.name} onClick={() => setSelected(null)}>
         <div className="viewer-header" onClick={(event) => event.stopPropagation()}>
