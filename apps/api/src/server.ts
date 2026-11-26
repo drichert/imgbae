@@ -29,7 +29,7 @@ async function imageDimensions(file: string) {
 }
 
 type SortKey = 'name' | 'modified' | 'size';
-type BrowseQuery = { path?: string; page?: string; sort?: string; order?: string };
+type BrowseQuery = { path?: string; page?: string; sort?: string; order?: string; includeFileNames?: string };
 const sortKeys: readonly SortKey[] = ['name', 'modified', 'size'];
 type PathQuery = { path?: string };
 type SearchQuery = SamplerFilters & { page?: string; options?: string; presence?: string; node?: string | string[] };
@@ -219,6 +219,7 @@ async function main(): Promise<void> {
       return {
         path: '', page, pageSize, totalPages, total: items.length, sort, order,
         hasMore: page + 1 < totalPages,
+        ...(request.query.includeFileNames === '1' ? { fileNames: [] } : {}),
         items: items.slice(start, end).map((root): Item => ({
           name: root.name, path: root.name, kind: 'directory', size: root.stat.size,
           modifiedAt: root.stat.mtime.toISOString(), hasComfyUiMetadata: false,
@@ -287,6 +288,9 @@ async function main(): Promise<void> {
       path: publicPath(root, dir),
       page, pageSize, totalPages, total: entries.length, sort, order,
       hasMore: page + 1 < totalPages,
+      ...(request.query.includeFileNames === '1' ? {
+        fileNames: listed.filter(({ kind }) => kind !== 'directory').map(({ entry }) => entry.name),
+      } : {}),
       items: values.filter((value): value is Item => value !== null),
     };
   });
