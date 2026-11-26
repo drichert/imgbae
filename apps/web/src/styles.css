@@ -39,17 +39,13 @@ button:focus-visible,input:focus-visible{outline:2px solid #9ab2ee;outline-offse
 .settings summary::-webkit-details-marker{display:none}
 .settings summary:hover,.settings[open] summary{background:#303242;color:#eff0fa}
 .settings summary:focus-visible{outline:2px solid #9ab2ee;outline-offset:3px}
-.settings-panel,.notification-card{background:#1d1f26;border:1px solid #3a3d4a;border-radius:10px;box-shadow:0 8px 26px #0006;color:#eff0fa}
+.settings-panel{background:#1d1f26;border:1px solid #3a3d4a;border-radius:10px;box-shadow:0 8px 26px #0006;color:#eff0fa}
 .settings-panel{position:absolute;z-index:5;top:calc(100% + 8px);right:0;width:250px;padding:15px;font-size:13px}
 .settings-panel label{display:flex;align-items:center;gap:9px;cursor:pointer}
 .settings-panel input{margin:0;accent-color:#a2abf8}
 .settings-panel p{margin:8px 0 0;color:#a6a9b7;line-height:1.4}
-.file-notification{position:fixed;right:16px;bottom:16px;z-index:30;max-width:min(420px,calc(100% - 32px))}
-.notification-card{display:flex;align-items:center;gap:10px;padding:12px 14px;font-size:14px}
-.notification-card svg{flex:none;color:#c4c9ff}
-.notification-card span{overflow-wrap:anywhere}
-.notification-card button{display:grid;place-items:center;flex:none;margin-left:4px;padding:5px;border:0;border-radius:5px;background:none}
-.notification-card button:hover{background:#303242}
+.file-toast{position:fixed;right:16px;bottom:16px;z-index:30;max-width:min(420px,calc(100% - 32px));pointer-events:none}
+.file-toast>div{padding:12px 16px;background:#1d1f26;border:1px solid #3a3d4a;border-radius:10px;box-shadow:0 8px 26px #0006;color:#eff0fa;font-size:14px;overflow-wrap:anywhere}
 .content{max-width:1610px;margin:0 auto;padding:49px 38px 60px}
 .heading{margin-bottom:35px}
 .eyebrow{font-size:11px;color:#8e97bd;letter-spacing:2px;font-weight:750;margin-bottom:13px}
@@ -69,6 +65,10 @@ h1{margin:0;font-size:clamp(27px,3.5vw,37px);font-weight:690;letter-spacing:-1.2
 .tile{display:flex;flex-direction:column;align-items:stretch;background:#1a1c22;border:1px solid #292c34;border-radius:12px;padding:0;overflow:hidden;color:inherit;text-align:left;min-width:0;transition:border-color .15s ease,transform .15s ease}
 .tile:not(:disabled):hover{border-color:#737a9f;transform:translateY(-2px)}
 .tile:disabled{opacity:.55}
+.tile-new{position:relative}
+.tile-new::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 3px #a2abf8,inset 0 0 24px #a2abf84d;pointer-events:none;animation:new-image-highlight 4s ease-out forwards}
+@keyframes new-image-highlight{0%,20%{opacity:1}100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.tile-new::after{animation:none}}
 .tile-preview{position:relative;flex:none;height:167px;display:flex;align-items:center;justify-content:center;background:#242630;color:#646d84;overflow:hidden}
 .tile-preview img{width:100%;height:100%;object-fit:contain}
 /* Min-height matches an image tile, for rows that contain only folders. */

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownWideNarrow, ArrowRight, ArrowUpNarrowWide, ChevronLeft, ChevronRight, File as FileIcon,
-  Bell, Folder, Image as ImageIcon, Images, Info, Search, Settings, Workflow, X,
+  Folder, Image as ImageIcon, Images, Info, Search, Settings, Workflow, X,
 } from 'lucide-react';
 import MetadataViewer from './MetadataViewer';
 import MetadataSearch from './MetadataSearch';
@@ -62,6 +62,10 @@ function storedNotifications(): boolean {
   try { return localStorage.getItem(notificationKey) === 'true'; }
   catch { return false; }
 }
+function desktopPermission(): NotificationPermission | 'unavailable' {
+  return window.isSecureContext && typeof window.Notification === 'function'
+    ? window.Notification.permission : 'unavailable';
+}
 function currentHashPath(): string {
   try { return decodeURIComponent(window.location.hash.replace(/^#\/?/, '')); }
   catch { return ''; }
@@ -112,15 +116,22 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [details, setDetails] = useState<ImageDetails | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(storedNotifications);
-  const [notification, setNotification] = useState<{ message: string } | null>(null);
+  const [permission, setPermission] = useState(desktopPermission);
+  const [toast, setToast] = useState<{ message: string } | null>(null);
+  const [newFileNames, setNewFileNames] = useState<Set<string> | null>(null);
   const fileSnapshot = useRef<{ folder: string; names: Set<string> } | null>(null);
-  const notificationEnabled = useRef(notificationsEnabled);
 
   useEffect(() => {
-    if (!notification) return;
-    const timer = window.setTimeout(() => setNotification(null), 8000);
+    if (!newFileNames) return;
+    const timer = window.setTimeout(() => setNewFileNames(null), 4000);
     return () => window.clearTimeout(timer);
-  }, [notification]);
+  }, [newFileNames]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -147,19 +158,18 @@ export default function App() {
     setBrowse(null);
     const query = search ? new URLSearchParams(search) : new URLSearchParams({ path: folder, sort, order });
     query.set('page', String(page));
+    if (!search) query.set('includeFileNames', '1');
+    const url = (search ? '/api/search?' : '/api/browse?') + query;
     if (search || fileSnapshot.current?.folder !== folder) {
       fileSnapshot.current = null;
-      setNotification(null);
+      setToast(null);
+      setNewFileNames(null);
     }
     let refreshTimer: number | undefined;
     let hasListing = false;
 
     async function loadListing() {
       try {
-        const snapshot = fileSnapshot.current;
-        if (!search && notificationEnabled.current) query.set('includeFileNames', '1');
-        else query.delete('includeFileNames');
-        const url = (search ? '/api/search?' : '/api/browse?') + query;
         const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok) {
           const action = search ? 'Could not search the library' : 'Could not open this folder';
@@ -167,11 +177,20 @@ export default function App() {
         }
         const result = await response.json() as BrowseResult;
         if (controller.signal.aborted) return;
-        if (result.fileNames && notificationEnabled.current && fileSnapshot.current === snapshot) {
+        if (result.fileNames) {
+          const snapshot = fileSnapshot.current;
           const added = snapshot ? result.fileNames.filter((name) => !snapshot.names.has(name)) : [];
           fileSnapshot.current = { folder, names: new Set(result.fileNames) };
-          if (added.length) {
-            setNotification({ message: added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files' });
+          if (added.length) setNewFileNames(new Set(added));
+          if (notificationsEnabled && added.length) {
+            const message = added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files';
+            if (!document.hidden && document.hasFocus()) {
+              setToast({ message });
+            } else if (desktopPermission() === 'granted') {
+              try {
+                new window.Notification('imgbae', { body: message, tag: 'imgbae-new-files' });
+              } catch { setPermission('unavailable'); }
+            }
           }
         }
         const lastPage = Math.max(0, result.totalPages - 1);
@@ -200,17 +219,27 @@ export default function App() {
 
     function scheduleRefresh() {
       refreshTimer = window.setTimeout(() => {
-        if (document.hidden) scheduleRefresh();
+        refreshTimer = undefined;
+        if (document.hidden && !(notificationsEnabled && desktopPermission() === 'granted')) scheduleRefresh();
         else void loadListing();
       }, folderRefreshMs);
     }
 
+    function refreshOnReturn() {
+      if (document.hidden || refreshTimer === undefined) return;
+      window.clearTimeout(refreshTimer);
+      refreshTimer = undefined;
+      void loadListing();
+    }
+
+    if (!search) document.addEventListener('visibilitychange', refreshOnReturn);
     void loadListing();
     return () => {
+      document.removeEventListener('visibilitychange', refreshOnReturn);
       window.clearTimeout(refreshTimer);
       controller.abort();
     };
-  }, [folder, page, search, sort, order]);
+  }, [folder, page, search, sort, order, notificationsEnabled]);
 
   useEffect(() => {
     if (search) return;
@@ -266,12 +295,17 @@ export default function App() {
   }
 
   function toggleNotifications(enabled: boolean) {
-    notificationEnabled.current = enabled;
-    fileSnapshot.current = null;
-    setNotification(null);
+    if (!enabled) setToast(null);
     setNotificationsEnabled(enabled);
     try { localStorage.setItem(notificationKey, String(enabled)); }
     catch { /* The setting still applies for this visit. */ }
+    if (enabled) {
+      const current = desktopPermission();
+      setPermission(current);
+      if (current === 'default') {
+        void window.Notification.requestPermission().then(setPermission, () => setPermission('unavailable'));
+      }
+    }
   }
 
   function navigate(path: string) {
@@ -376,7 +410,11 @@ export default function App() {
                     onChange={(event) => toggleNotifications(event.target.checked)} />
                   New file notifications
                 </label>
-                <p>Show an alert when files appear in the open folder.</p>
+                <p>Show an in-app toast for new files in the open folder, or a browser notification while imgbae is inactive.</p>
+                {notificationsEnabled && permission === 'denied' &&
+                  <p>To receive desktop alerts, allow notifications in your browser’s site settings.</p>}
+                {notificationsEnabled && permission === 'unavailable' &&
+                  <p>Desktop alerts require a supported browser on HTTPS or localhost.</p>}
               </div>
             </details>
           </div>
@@ -438,8 +476,9 @@ export default function App() {
             {visible.filter((item) => item.kind !== 'directory').map((item) => {
               const dimensions = friendlyDimensions(item);
               const megapixels = friendlyMegapixels(item);
+              const isNewImage = item.kind === 'image' && newFileNames?.has(item.name);
               return (
-                <button key={item.path} className="tile"
+                <button key={item.path} className={isNewImage ? 'tile tile-new' : 'tile'}
                   onClick={() => item.kind === 'image' ? setSelected(item.path) : undefined}
                   disabled={item.kind === 'file'} title={item.name}>
                   <div className="tile-preview">
@@ -474,16 +513,10 @@ export default function App() {
           </div>}
         </div>
       </main>
-
-      <div className="file-notification" role="status">
-        {notification && <div className="notification-card">
-          <Bell size={18} aria-hidden="true" />
-          <span>{notification.message}</span>
-          <button type="button" aria-label="Dismiss notification" onClick={() => setNotification(null)}>
-            <X size={17} aria-hidden="true" />
-          </button>
-        </div>}
+      <div className="file-toast" role="status">
+        {toast && <div>{toast.message}</div>}
       </div>
+
 
       {selectedItem && <div className="lightbox" role="dialog" aria-modal="true" aria-label={'Viewing ' + selectedItem.name} onClick={() => setSelected(null)}>
         <div className="viewer-header" onClick={(event) => event.stopPropagation()}>
