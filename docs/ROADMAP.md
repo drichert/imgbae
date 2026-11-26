@@ -31,7 +31,15 @@ The user-facing product should become useful **before** any advanced processing 
 - [ ] Conventional resize, resample and quality controls
 - [ ] Metadata preservation and sidecar options, especially for ComfyUI PNGs
 
-## 5. AI upscaling
+## 5. Automatic classification and categorization
+- [ ] Analyze image content to suggest searchable categories and tags (e.g., subjects, visual style, medium, and user-defined categories)
+- [ ] Support local, configurable classification models; make remote inference explicitly opt-in if added later
+- [ ] Batch classify existing images and incrementally process new or changed images, with progress, cancellation, and reclassification
+- [ ] Store predicted labels, confidence scores, and model/version provenance in the SQLite catalog, separate from embedded image metadata and user-curated labels
+- [ ] Review, edit, accept, or reject suggested categories; manual overrides must survive rescans and model updates
+- [ ] Browse, search, and filter by categories/tags without automatically renaming or moving source files
+
+## 6. AI upscaling
 - [ ] Selectable model registry (e.g., Real-ESRGAN-compatible models, 4× UltraSharp, NMKD Siax)
 - [ ] GPU autodetection, compatible inference backend selection and CPU fallback
 - [ ] VRAM-aware tiling, progress and cancellation
