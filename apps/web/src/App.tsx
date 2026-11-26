@@ -43,6 +43,7 @@ type ImageDetails = {
 
 // Keep in step with foldersPerSlot in the API, which pages by gallery slot.
 const foldersPerStack = 4;
+const folderRefreshMs = 5000;
 const sortLabels: Record<SortKey, string> = { name: 'Name', modified: 'Date modified', size: 'File size' };
 
 function storedSort(): { sort: SortKey; order: SortOrder } {
@@ -116,20 +117,55 @@ export default function App() {
     setBrowse(null);
     const query = search ? new URLSearchParams(search) : new URLSearchParams({ path: folder, sort, order });
     query.set('page', String(page));
-    fetch((search ? '/api/search?' : '/api/browse?') + query, { signal: controller.signal })
-      .then(async (response) => {
+    const url = (search ? '/api/search?' : '/api/browse?') + query;
+    let refreshTimer: number | undefined;
+    let hasListing = false;
+
+    async function loadListing() {
+      try {
+        const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok) {
           const action = search ? 'Could not search the library' : 'Could not open this folder';
           throw new Error(action + ' (' + response.status + ')');
         }
-        return await response.json() as BrowseResult;
-      })
-      .then((result) => { if (!controller.signal.aborted) setBrowse(result); })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Unable to connect to imgbae API');
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+        const result = await response.json() as BrowseResult;
+        if (controller.signal.aborted) return;
+        const lastPage = Math.max(0, result.totalPages - 1);
+        if (!search && page > lastPage) {
+          setSelected(null);
+          setPage(lastPage);
+          return;
+        }
+        hasListing = true;
+        setBrowse(result);
+        setError('');
+        if (!search) {
+          setSelected((path) => path && result.items.some((item) => item.path === path && item.kind === 'image') ? path : null);
+        }
+      } catch (cause: unknown) {
+        if (!controller.signal.aborted && !hasListing) {
+          setError(cause instanceof Error ? cause.message : 'Unable to connect to imgbae API');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          if (!search) scheduleRefresh();
+        }
+      }
+    }
+
+    function scheduleRefresh() {
+      refreshTimer = window.setTimeout(() => {
+        if (document.hidden) scheduleRefresh();
+        else void loadListing();
+      }, folderRefreshMs);
+    }
+
+    void loadListing();
+    return () => {
+      window.clearTimeout(refreshTimer);
+      controller.abort();
+    };
   }, [folder, page, search, sort, order]);
 
   useEffect(() => {
