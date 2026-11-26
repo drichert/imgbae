@@ -117,7 +117,14 @@ export default function App() {
   const [details, setDetails] = useState<ImageDetails | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(storedNotifications);
   const [permission, setPermission] = useState(desktopPermission);
+  const [toast, setToast] = useState<{ message: string } | null>(null);
   const fileSnapshot = useRef<{ folder: string; names: Set<string> } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -148,6 +155,7 @@ export default function App() {
     const url = (search ? '/api/search?' : '/api/browse?') + query;
     if (!notificationsEnabled || search || fileSnapshot.current?.folder !== folder) {
       fileSnapshot.current = null;
+      setToast(null);
     }
     let refreshTimer: number | undefined;
     let hasListing = false;
@@ -165,11 +173,15 @@ export default function App() {
           const snapshot = fileSnapshot.current;
           const added = snapshot ? result.fileNames.filter((name) => !snapshot.names.has(name)) : [];
           fileSnapshot.current = { folder, names: new Set(result.fileNames) };
-          if (added.length && (document.hidden || !document.hasFocus()) && desktopPermission() === 'granted') {
+          if (added.length) {
             const message = added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files';
-            try {
-              new window.Notification('imgbae', { body: message, tag: 'imgbae-new-files' });
-            } catch { setPermission('unavailable'); }
+            if (!document.hidden && document.hasFocus()) {
+              setToast({ message });
+            } else if (desktopPermission() === 'granted') {
+              try {
+                new window.Notification('imgbae', { body: message, tag: 'imgbae-new-files' });
+              } catch { setPermission('unavailable'); }
+            }
           }
         }
         const lastPage = Math.max(0, result.totalPages - 1);
@@ -389,7 +401,7 @@ export default function App() {
                     onChange={(event) => toggleNotifications(event.target.checked)} />
                   New file notifications
                 </label>
-                <p>Send a browser notification for new files in the open folder while imgbae is inactive.</p>
+                <p>Show an in-app toast for new files in the open folder, or a browser notification while imgbae is inactive.</p>
                 {notificationsEnabled && permission === 'denied' &&
                   <p>To receive desktop alerts, allow notifications in your browser’s site settings.</p>}
                 {notificationsEnabled && permission === 'unavailable' &&
@@ -491,6 +503,9 @@ export default function App() {
           </div>}
         </div>
       </main>
+      <div className="file-toast" role="status">
+        {toast && <div>{toast.message}</div>}
+      </div>
 
 
       {selectedItem && <div className="lightbox" role="dialog" aria-modal="true" aria-label={'Viewing ' + selectedItem.name} onClick={() => setSelected(null)}>
