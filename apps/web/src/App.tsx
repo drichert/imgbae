@@ -62,6 +62,10 @@ function storedNotifications(): boolean {
   try { return localStorage.getItem(notificationKey) === 'true'; }
   catch { return false; }
 }
+function desktopPermission(): NotificationPermission | 'unavailable' {
+  return window.isSecureContext && typeof window.Notification === 'function'
+    ? window.Notification.permission : 'unavailable';
+}
 function currentHashPath(): string {
   try { return decodeURIComponent(window.location.hash.replace(/^#\/?/, '')); }
   catch { return ''; }
@@ -112,6 +116,7 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [details, setDetails] = useState<ImageDetails | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(storedNotifications);
+  const [permission, setPermission] = useState(desktopPermission);
   const [notification, setNotification] = useState<{ message: string } | null>(null);
   const fileSnapshot = useRef<{ folder: string; names: Set<string> } | null>(null);
 
@@ -178,7 +183,13 @@ export default function App() {
           const added = snapshot ? result.fileNames.filter((name) => !snapshot.names.has(name)) : [];
           fileSnapshot.current = { folder, names: new Set(result.fileNames) };
           if (added.length) {
-            setNotification({ message: added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files' });
+            const message = added.length === 1 ? 'New file: ' + added[0] : added.length + ' new files';
+            setNotification({ message });
+            if (document.hidden && desktopPermission() === 'granted') {
+              try {
+                new window.Notification('imgbae', { body: message, tag: 'imgbae-new-files' });
+              } catch { /* The in-app alert remains available. */ }
+            }
           }
         }
         const lastPage = Math.max(0, result.totalPages - 1);
@@ -208,7 +219,7 @@ export default function App() {
     function scheduleRefresh() {
       refreshTimer = window.setTimeout(() => {
         refreshTimer = undefined;
-        if (document.hidden) scheduleRefresh();
+        if (document.hidden && !(notificationsEnabled && desktopPermission() === 'granted')) scheduleRefresh();
         else void loadListing();
       }, folderRefreshMs);
     }
@@ -288,6 +299,13 @@ export default function App() {
     setNotificationsEnabled(enabled);
     try { localStorage.setItem(notificationKey, String(enabled)); }
     catch { /* The setting still applies for this visit. */ }
+    if (enabled) {
+      const current = desktopPermission();
+      setPermission(current);
+      if (current === 'default') {
+        void window.Notification.requestPermission().then(setPermission, () => setPermission('unavailable'));
+      }
+    }
   }
 
   function navigate(path: string) {
@@ -393,6 +411,12 @@ export default function App() {
                   New file notifications
                 </label>
                 <p>Show an alert when files appear in the open folder.</p>
+                {notificationsEnabled && permission === 'granted' &&
+                  <p>Desktop alerts are enabled while the tab is in the background.</p>}
+                {notificationsEnabled && permission === 'denied' &&
+                  <p>To receive desktop alerts, allow notifications in your browser’s site settings.</p>}
+                {notificationsEnabled && permission === 'unavailable' &&
+                  <p>Desktop alerts require a supported browser on HTTPS or localhost.</p>}
               </div>
             </details>
           </div>
