@@ -114,12 +114,20 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(storedNotifications);
   const [notification, setNotification] = useState<{ message: string } | null>(null);
   const fileSnapshot = useRef<{ folder: string; names: Set<string> } | null>(null);
-  const notificationEnabled = useRef(notificationsEnabled);
 
   useEffect(() => {
     if (!notification) return;
-    const timer = window.setTimeout(() => setNotification(null), 8000);
-    return () => window.clearTimeout(timer);
+    let timer: number | undefined;
+    function updateDismissal() {
+      window.clearTimeout(timer);
+      if (!document.hidden) timer = window.setTimeout(() => setNotification(null), 8000);
+    }
+    updateDismissal();
+    document.addEventListener('visibilitychange', updateDismissal);
+    return () => {
+      document.removeEventListener('visibilitychange', updateDismissal);
+      window.clearTimeout(timer);
+    };
   }, [notification]);
 
   useEffect(() => {
@@ -147,7 +155,9 @@ export default function App() {
     setBrowse(null);
     const query = search ? new URLSearchParams(search) : new URLSearchParams({ path: folder, sort, order });
     query.set('page', String(page));
-    if (search || fileSnapshot.current?.folder !== folder) {
+    if (!search && notificationsEnabled) query.set('includeFileNames', '1');
+    const url = (search ? '/api/search?' : '/api/browse?') + query;
+    if (!notificationsEnabled || search || fileSnapshot.current?.folder !== folder) {
       fileSnapshot.current = null;
       setNotification(null);
     }
@@ -156,10 +166,6 @@ export default function App() {
 
     async function loadListing() {
       try {
-        const snapshot = fileSnapshot.current;
-        if (!search && notificationEnabled.current) query.set('includeFileNames', '1');
-        else query.delete('includeFileNames');
-        const url = (search ? '/api/search?' : '/api/browse?') + query;
         const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok) {
           const action = search ? 'Could not search the library' : 'Could not open this folder';
@@ -167,7 +173,8 @@ export default function App() {
         }
         const result = await response.json() as BrowseResult;
         if (controller.signal.aborted) return;
-        if (result.fileNames && notificationEnabled.current && fileSnapshot.current === snapshot) {
+        if (notificationsEnabled && result.fileNames) {
+          const snapshot = fileSnapshot.current;
           const added = snapshot ? result.fileNames.filter((name) => !snapshot.names.has(name)) : [];
           fileSnapshot.current = { folder, names: new Set(result.fileNames) };
           if (added.length) {
@@ -200,17 +207,27 @@ export default function App() {
 
     function scheduleRefresh() {
       refreshTimer = window.setTimeout(() => {
+        refreshTimer = undefined;
         if (document.hidden) scheduleRefresh();
         else void loadListing();
       }, folderRefreshMs);
     }
 
+    function refreshOnReturn() {
+      if (document.hidden || refreshTimer === undefined) return;
+      window.clearTimeout(refreshTimer);
+      refreshTimer = undefined;
+      void loadListing();
+    }
+
+    if (!search && notificationsEnabled) document.addEventListener('visibilitychange', refreshOnReturn);
     void loadListing();
     return () => {
+      document.removeEventListener('visibilitychange', refreshOnReturn);
       window.clearTimeout(refreshTimer);
       controller.abort();
     };
-  }, [folder, page, search, sort, order]);
+  }, [folder, page, search, sort, order, notificationsEnabled]);
 
   useEffect(() => {
     if (search) return;
@@ -266,7 +283,6 @@ export default function App() {
   }
 
   function toggleNotifications(enabled: boolean) {
-    notificationEnabled.current = enabled;
     fileSnapshot.current = null;
     setNotification(null);
     setNotificationsEnabled(enabled);
