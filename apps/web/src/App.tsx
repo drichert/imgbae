@@ -3,6 +3,7 @@ import {
   ArrowDownWideNarrow, ArrowRight, ArrowUpNarrowWide, ChevronLeft, ChevronRight, File as FileIcon,
   Folder, Image as ImageIcon, Images, Info, Search, Settings, Workflow, X,
 } from 'lucide-react';
+import ImageDescription from './ImageDescription';
 import MetadataViewer from './MetadataViewer';
 import MetadataSearch from './MetadataSearch';
 
@@ -552,6 +553,7 @@ export default function App() {
             {selectedItem.name.toLowerCase().endsWith('.png') && (
               <MetadataViewer key={resourceUrl('metadata', selectedItem)} url={resourceUrl('metadata', selectedItem)} />
             )}
+            <ImageDescription key={resourceUrl('description', selectedItem)} url={resourceUrl('description', selectedItem)} />
             <div className="inspector-note">Viewing only. This app does not modify the selected file.</div>
           </aside>
         </div>

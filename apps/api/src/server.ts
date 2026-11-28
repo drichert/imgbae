@@ -454,6 +454,55 @@ async function main(): Promise<void> {
     };
   });
 
+  const visionModel = process.env.IMGBAE_VISION_MODEL?.trim() || 'qwen3-vl:4b';
+  let describing = false;
+  app.post<{ Querystring: PathQuery }>('/api/description', async (request, reply) => {
+    const { file } = await imageFile(request.query.path);
+    if (describing) return reply.code(429).send({ error: 'Another description is running. Try again shortly.' });
+    describing = true;
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    reply.raw.once('close', cancel);
+    try {
+      const preview = await sharp(file, { animated: false })
+        .rotate()
+        .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]);
+      try {
+        const response = await fetch('http://127.0.0.1:11434/api/chat', {
+          method: 'POST', redirect: 'error', signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: visionModel, stream: false,
+            messages: [{
+              role: 'user',
+              content: 'Describe this image in two or three sentences. Focus on the visible subject, composition, colors and style.',
+              images: [preview.toString('base64')],
+            }],
+            options: { num_predict: 256 },
+          }),
+        });
+        if (response.status === 404) return reply.code(503).send({ error: 'Install the Ollama model on the API host: ' + visionModel });
+        if (!response.ok) return reply.code(502).send({ error: 'Ollama could not describe this image. Check that the configured model supports vision.' });
+        const result = await response.json();
+        const message = isObject(result) ? result.message : null;
+        const description = isObject(message) && typeof message.content === 'string' && message.content.trim();
+        if (!description) return reply.code(502).send({ error: 'Ollama returned an empty description.' });
+        return { description, model: visionModel };
+      } catch {
+        if (controller.signal.aborted) return;
+        if (signal.aborted) return reply.code(504).send({ error: 'Ollama took too long to generate a description.' });
+        return reply.code(502).send({ error: 'Could not read a response from Ollama. Check that it is running on the API host.' });
+      }
+    } finally {
+      reply.raw.off('close', cancel);
+      describing = false;
+    }
+  });
+
   app.get<{ Querystring: PathQuery }>('/api/metadata', async (request) => {
     const { file } = await imageFile(request.query.path);
     if (extname(file).toLowerCase() !== '.png') throw new ForbiddenPath('Metadata inspection requires a PNG');
