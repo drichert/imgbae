@@ -155,3 +155,6 @@ kbd{font:inherit;font-size:10px;background:#252830;border:1px solid #41444c;bord
 .node-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:6px 12px;max-height:190px;overflow:auto}
 .node-options label{display:flex;align-items:start;gap:6px;overflow-wrap:anywhere}
 .search-nodes button{margin-top:10px}
+
+.image-description { margin-top: 18px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.image-description button { padding: 6px 10px; }

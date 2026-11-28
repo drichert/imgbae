@@ -64,6 +64,12 @@ If your images live on another LAN machine, **mount the remote share** on the ma
 
 When upgrading an existing deployment, update its exported configuration variables to the `IMGBAE_` names; the previous names are no longer recognized.
 
+### Local image descriptions
+
+Run Ollama on the same machine as the imgbae API and install the default vision model with `ollama pull qwen3-vl:4b`. To use a different installed vision model, set `IMGBAE_VISION_MODEL` in the API environment and restart imgbae.
+
+Open an image and click **Generate description** in the inspector. The API sends an oriented JPEG preview (up to 1280 px on each side) to Ollama at `127.0.0.1:11434`. Animated and multipage images use the first frame or page. The caption stays in the open viewer and the original file is untouched.
+
 Optional API environment variables: `IMGBAE_PORT=3001`, `IMGBAE_HOST=127.0.0.1`. Prefer keeping the API on loopback and using the web proxy for trusted-LAN access. Do **not** expose the unauthenticated API or development server to the internet or an untrusted LAN. Authentication and production deployment are separate milestones. Prefer an SSH tunnel for remote access outside your home LAN.
 
 ### Build
